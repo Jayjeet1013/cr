@@ -36,7 +36,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .hud-lap .lapn span{font-size:15px;opacity:.6}
 .hud-lap .time{font:600 22px/1 var(--mono)}
 .hud-lap .best{grid-column:1/-1;font:500 11px var(--mono);letter-spacing:.06em;opacity:.75;margin-top:4px}
-#rail{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:30px;height:260px;background:rgba(246,247,243,.9);border-radius:15px;box-shadow:0 8px 20px rgba(14,33,50,.25)}
+#rail{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:56px;height:280px;background:rgba(246,247,243,.9);border-radius:14px;box-shadow:0 8px 20px rgba(14,33,50,.25)}
+.hud-pos .gap{display:block;margin-top:6px;font:600 12px var(--mono);letter-spacing:.06em;text-shadow:0 1px 3px rgba(14,33,50,.8)}
 .hud-speed{position:absolute;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:6px;min-width:190px}
 .hud-speed .spd{font:900 46px/.9 var(--display);font-stretch:118%;font-variant-numeric:tabular-nums;text-shadow:0 3px 0 rgba(14,33,50,.35)}
 .hud-speed .spd span{font:600 12px var(--mono);letter-spacing:.12em;margin-left:6px}
@@ -132,7 +133,7 @@ body.touching .corner{top:calc(170px + env(safe-area-inset-top,0px));bottom:auto
   .menu{grid-template-columns:1fr;gap:20px}
   .pitch p{margin-bottom:14px}
   .keys{display:none}
-  #rail{height:170px;width:26px}
+  #rail{height:190px;width:48px}
   .hud-lap{padding:6px 12px}
   .hud-lap .time{font-size:17px}
 }
@@ -143,13 +144,13 @@ body.touching .corner{top:calc(170px + env(safe-area-inset-top,0px));bottom:auto
 <canvas id="game"></canvas>
 
 <div id="hud" class="hud" hidden>
-  <div class="hud-pos"><span id="hPos">4</span><sup id="hSuf">th</sup><small id="hOf">OF 4</small></div>
+  <div class="hud-pos"><span id="hPos">4</span><sup id="hSuf">th</sup><small id="hOf">OF 4</small><span class="gap" id="hGap"></span></div>
   <div class="hud-lap">
     <div class="lbl">TO HQ</div><div class="lbl">TIME</div>
     <div class="lapn"><span id="hDist">3.00</span><span> km</span></div><div class="time" id="hTime">0:00.000</div>
     <div class="best" id="hBest">HITS 0</div>
   </div>
-  <canvas id="rail" width="60" height="520" aria-label="Race progress"></canvas>
+  <canvas id="rail" width="112" height="560" aria-label="Race progress"></canvas>
   <div class="hud-speed">
     <div class="spd"><b id="hSpd">0</b><span>KM/H</span></div>
     <div class="nitro" id="hNitroBar"><i id="hNitro"></i></div>
@@ -774,8 +775,10 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && (st
 function banner(text, warn) {
   const b = $('#banner'); b.textContent = text; b.classList.toggle('warn', !!warn); b.classList.add('show'); bannerTimer = 1.4;
 }
+// In team races everyone is ranked from the server's latest positions, so every screen agrees on who's ahead.
+const rankProg = c => mode === 'team' && c.netProg != null ? c.netProg : c.prog;
 function standings() {
-  return [...cars].sort((a, b) => (a.finished && b.finished) ? (a.finishTime - b.finishTime) || 0 : a.finished ? -1 : b.finished ? 1 : b.prog - a.prog);
+  return [...cars].sort((a, b) => (a.finished && b.finished) ? (a.finishTime - b.finishTime) || 0 : a.finished ? -1 : b.finished ? 1 : rankProg(b) - rankProg(a));
 }
 
 const STEP = 1 / 120;
@@ -1066,19 +1069,22 @@ function drawPops(dt) {
   ctx.globalAlpha = 1;
 }
 function drawRail() {
-  const m = rctx, W = rail.width, H = rail.height, top = 34, bot = H - 24;
+  // Each car gets its own column, so cars side by side never hide each other.
+  const m = rctx, W = rail.width, H = rail.height, top = 52, bot = H - 30;
+  const g = ghost && mode === 'trial' ? ghostAt(raceClock) : null;
+  const cols = cars.length + (g ? 1 : 0), pad = cols > 3 ? 18 : 30, colX = i => cols < 2 ? W / 2 : pad + i * (W - pad * 2) / (cols - 1);
+  const yOf = prog => bot - clamp(prog / RACE_LEN, 0, 1) * (bot - top);
   m.clearRect(0, 0, W, H);
-  m.fillStyle = '#c9d1d3'; rr(m, W / 2 - 4, top, 8, bot - top, 4); m.fill();
-  for (let r = 0; r < 2; r++) for (let k = 0; k < 4; k++) { m.fillStyle = (r + k) % 2 ? '#0e2132' : '#fff'; m.fillRect(W / 2 - 16 + k * 8, 10 + r * 8, 8, 8); }
-  if (ghost && mode === 'trial') {
-    const g = ghostAt(raceClock);
-    if (g) { const y = bot - clamp(-g.y / RACE_LEN, 0, 1) * (bot - top); m.beginPath(); m.arc(W / 2, y, 9, 0, 7); m.lineWidth = 3; m.strokeStyle = '#5b6c78'; m.stroke(); }
-  }
-  for (const c of [...cars].reverse()) {
-    const y = bot - clamp(c.prog / RACE_LEN, 0, 1) * (bot - top);
-    m.beginPath(); m.arc(W / 2, y, c === player ? 12 : 9, 0, 7); m.fillStyle = c.color; m.fill();
-    m.lineWidth = 3; m.strokeStyle = c === player ? '#0e2132' : '#fff'; m.stroke();
-  }
+  for (let i = 0; i < cols; i++) { m.fillStyle = '#d5dcdc'; rr(m, colX(i) - 4, top, 8, bot - top, 4); m.fill(); }
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 6; k++) { m.fillStyle = (r + k) % 2 ? '#0e2132' : '#fff'; m.fillRect(W / 2 - 36 + k * 12, 12 + r * 12, 12, 12); }
+  if (g) { m.beginPath(); m.arc(colX(cols - 1), yOf(-g.y), 15, 0, 7); m.lineWidth = 5; m.strokeStyle = '#5b6c78'; m.stroke(); }
+  const st = standings();
+  cars.forEach((c, i) => {
+    const x = colX(i), y = yOf(rankProg(c)), r = cols > 3 ? 15 : 19;
+    m.beginPath(); m.arc(x, y, r, 0, 7); m.fillStyle = c.color; m.fill();
+    m.lineWidth = c === player ? 6 : 4; m.strokeStyle = c === player ? '#0e2132' : '#fff'; m.stroke();
+    if (mode !== 'trial') { m.fillStyle = '#fff'; m.font = '900 ' + (r + 4) + 'px Archivo, Arial, sans-serif'; m.textAlign = 'center'; m.textBaseline = 'middle'; m.fillText(String(st.indexOf(c) + 1), x, y + 1); }
+  });
 }
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; document.getElementById(id).textContent = v; } }
@@ -1088,6 +1094,15 @@ function drawHud() {
   setText('hPos', mode === 'trial' ? '' : String(pos)); setText('hSuf', mode === 'trial' ? '' : suffix(pos)); setText('hOf', mode === 'trial' ? (ghost ? 'DAILY TRIAL · GHOST ON' : 'DAILY TRIAL') : 'OF ' + cars.length);
   setText('hDist', (Math.max(0, RACE_LEN + player.y) / PX_PER_M / 1000).toFixed(2));
   setText('hTime', fmt(player.finished ? player.finishTime : raceClock));
+  let gapTxt = '';
+  if (mode !== 'trial' && cars.length > 1 && !player.finished) {
+    const i = st.indexOf(player), m = c => Math.round(Math.abs(rankProg(c) - rankProg(player)) / PX_PER_M);
+    const near = i > 0 ? st[i - 1] : st[1];
+    if (near.finished) gapTxt = '▲ ' + near.name + ' finished';
+    else if (m(near) < 2) gapTxt = '◆ Side by side with ' + near.name;
+    else gapTxt = i > 0 ? '▲ ' + near.name + ' ' + m(near) + ' m ahead' : '▼ ' + near.name + ' ' + m(near) + ' m behind';
+  }
+  setText('hGap', gapTxt);
   let extra = '';
   if (mode === 'race') extra = '  ·  BEST ' + fmt(store.get('best', {}).race);
   else if (mode === 'trial') {
@@ -1225,8 +1240,9 @@ const net = {
     for (const p of room.players) {
       const c = cars.find(k => k.id === p.id);
       if (!c) continue;
+      if (room.status !== 'countdown' && p.seq) c.netProg = p.prog;
       if (c === player) { if (p.time != null) c.finishTime = p.time; continue; }
-      if (room.status !== 'countdown') { c.tx = p.x; c.ty = p.y; c.th = p.a; c.prog = p.prog; c.steer = p.steer || 0; }
+      if (room.status !== 'countdown' && p.seq) { c.tx = p.x; c.ty = p.y; c.th = p.a; c.steer = p.steer || 0; c.tvx = p.vx || 0; c.tvy = p.vy || 0; c.recv = performance.now(); }
       c.finished = p.finished; c.finishTime = p.time != null ? p.time : Infinity;
     }
     if (room.status === 'finished' && state !== 'finished') {
@@ -1235,18 +1251,23 @@ const net = {
     }
   },
   startRace(room) {
+    this.seq = 0;
     mode = 'team'; state = 'countdown'; countT = Math.max(0.5, room.startsIn / 1000); lastCountShown = -1; raceClock = 0; finishCount = 0; milestones = {};
     resetWorld(room.seed || 1);
     cars = room.players.map(p => {
       const c = makeCar({ id: p.id, name: p.name, dept: p.dept, color: p.color, remote: p.id !== this.pid });
-      place(c, p.slot); c.tx = c.x; c.ty = c.y; c.th = c.h; return c;
+      place(c, p.slot); Object.assign(c, { tx: c.x, ty: c.y, th: c.h, tvx: 0, tvy: 0, recv: performance.now(), netProg: null }); return c;
     });
     player = cars.find(c => c.id === this.pid);
     showScreen(null);
   },
   tick(dt) {
     for (const c of cars) if (c.remote && c.tx != null) {
-      const k = Math.min(1, dt * 12); c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k; c.h += wrapA(c.th - c.h) * k;
+      // Draw remote cars where they are now, not where they were when the last update was sent.
+      const age = Math.min(0.3, (performance.now() - c.recv) / 1000) + 0.05;
+      const px = c.tx + c.tvx * age, py = c.ty + c.tvy * age, k = Math.min(1, dt * 10);
+      c.x += (px - c.x) * k; c.y += (py - c.y) * k; c.h += wrapA(c.th - c.h) * k;
+      c.vx = c.tvx; c.vy = c.tvy; c.prog = -c.y;
     }
     if (!player || (state !== 'race' && state !== 'finished') || player.sentFinal) return;
     this.sendT -= dt; if (this.sendT <= 0) { this.sendT = 0.07; this.move(); }
@@ -1254,7 +1275,8 @@ const net = {
   move(final) {
     if (!player) return;
     if (final) player.sentFinal = true;
-    this.api('/move', { x: player.x, y: player.y, a: player.h, prog: player.prog, steer: player.steer, done: !!player.finished }).catch(() => {});
+    this.seq = (this.seq || 0) + 1;
+    this.api('/move', { seq: this.seq, x: player.x, y: player.y, a: player.h, vx: player.vx, vy: player.vy, steer: player.steer, done: !!player.finished }).catch(() => {});
   }
 };
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3200); }
